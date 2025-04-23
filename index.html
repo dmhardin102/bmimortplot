@@ -1,0 +1,104 @@
+<input id="bmi" type="number" min="10" max="50" step="0.1" placeholder="BMI">
+<div id="error-message" style="color: white; background-color: #d9534f; padding: 5px; margin: 5px 0; border-radius: 3px; display: none;">BMI must be between 10 and 50</div>
+<canvas id="mortChart"></canvas>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+function hrAllCause(bmi){
+  if (bmi < 22.5)      return Math.exp(0.049 * (22.5 - bmi));
+  if (bmi <= 25.0)     return 1.0;
+  return Math.exp(0.054 * (bmi - 25.0));
+}
+
+// build the baseline curve
+const xs = Array.from({length:401},(_,i)=>10+i*0.1);
+const ys = xs.map(hrAllCause);
+
+const ctx = document.getElementById('mortChart').getContext('2d');
+const chart = new Chart(ctx,{
+  type:'line',
+  data:{labels:xs, datasets:[{
+    label:'All-cause HR',
+    data:ys.map((y,i)=>({x:xs[i],y})),
+    borderColor:'rgba(220, 20, 60, 0.7)',
+    fill:false,
+    tension:0.3,
+    order: 0  // Lower values are drawn first (underneath)
+  }]},
+  options:{scales:{x:{type:'linear',title:{display:true,text:'BMI (kg/m²)'}},
+                   y:{title:{display:true,text:'Hazard ratio'},min:0.5,max:4}}}
+});
+
+// interactively add a marker
+document.addEventListener('DOMContentLoaded', () => {
+  const bmiInput = document.getElementById('bmi');
+  const errorMessage = document.getElementById('error-message');
+  
+  // Function to update chart with current BMI value
+  const updateChartWithBmi = (bmi) => {
+    // Clear any previous error message
+    errorMessage.style.display = 'none';
+    
+    // Validate BMI range
+    if(isNaN(bmi) || bmi < 10 || bmi > 50) {
+      // Show error message for out of bounds values
+      if(!isNaN(bmi) && (bmi < 10 || bmi > 50)) {
+        errorMessage.style.display = 'block';
+      }
+      
+      // Remove marker if input is invalid
+      chart.data.datasets = chart.data.datasets.filter(d => !d.isMarker);
+      chart.update();
+      return;
+    }
+    
+    const hr = hrAllCause(bmi);
+    
+    // Save to localStorage
+    localStorage.setItem('savedBmiValue', bmi);
+
+    // remove old marker dataset
+    chart.data.datasets = chart.data.datasets.filter(d => !d.isMarker);
+    
+    // Reset the main line dataset to have a gap at the marker position
+    const gap = 0.15; // Keep gap size at 0.25 as preferred
+    chart.data.datasets[0].data = xs.map((x,i) => {
+      // Skip points within gap range of the marker position
+      if (Math.abs(x - bmi) < gap) {
+        return {x: x, y: null}; // null creates a gap in the line
+      }
+      return {x: x, y: ys[i]};
+    });
+
+    // Add marker
+    chart.data.datasets.push({
+      type: 'scatter',
+      data:[{x:bmi,y:hr}], 
+      pointRadius:12,
+      pointBackgroundColor:'rgba(0, 0, 0, 1)',
+      pointBorderColor:'white',
+      pointBorderWidth: 2,
+      pointStyle: 'rect',
+      showLine:false, 
+      isMarker:true,
+      order: 99
+    });
+    
+    chart.update();
+  };
+  
+  // Load previously saved BMI value from localStorage if available
+  const savedBmi = localStorage.getItem('savedBmiValue');
+  if (savedBmi !== null) {
+    const bmiValue = parseFloat(savedBmi);
+    bmiInput.value = savedBmi;
+    // Directly call the function to update the chart with the saved value
+    updateChartWithBmi(bmiValue);
+  }
+  
+  // Add event listener for input changes
+  bmiInput.addEventListener('input', e => {
+    const bmi = parseFloat(e.target.value);
+    updateChartWithBmi(bmi);
+  });
+});
+</script>
