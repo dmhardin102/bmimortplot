@@ -166,7 +166,8 @@
           datasets: [
             {
               label: id,
-              data: xs.map(x => ({ x, y: hrFn(x) })),
+              // convert HR → %RRinc
+              data: xs.map(x => ({ x, y: (hrFn(x) - 1) * 100 })),
               borderColor: colorMap[baseColor],
               borderWidth: 1.0,
               tension: 0.3,
@@ -174,8 +175,8 @@
               order: 0
             },
             {
-              label: 'HR=1',
-              data: xs.map(x => ({ x, y: 1 })),
+              label: 'RR=0%',
+              data: xs.map(x => ({ x, y: 0 })), // baseline at 0%
               borderColor: 'rgba(102,102,102,0.3)',
               borderDash: [6, 4],
               borderWidth: 1,
@@ -199,10 +200,10 @@
             },
             y: {
               type: 'linear',
-              min: 0.5,
-              max: 4,
+              min: -50,   // (0.5–1)*100 = -50%
+              max: 300,   // (4–1)*100 = 300%
               grace: '5%',
-              title: { display: true, text: 'Hazard ratio' }
+              title: { display: true, text: 'Relative risk increase (%)' }
             }
           }
         }
@@ -234,18 +235,17 @@
       localStorage.savedBmi = b;
 
       charts.forEach(({ chart, fn }) => {
-        const hr = fn(b);
-        // reset to baseline datasets
+        const rr = (fn(b) - 1) * 100; // percent RR increase
         chart.data.datasets = chart.data.datasets.slice(0, 2);
-        // introduce a small gap in the line
         const gap = 0.2;
         chart.data.datasets[0].data = xs.map(x =>
-          Math.abs(x - b) < gap ? { x, y: null } : { x, y: fn(x) }
+          Math.abs(x - b) < gap
+            ? { x, y: null }
+            : { x, y: (fn(x) - 1) * 100 }
         );
-        // add the marker
         chart.data.datasets.push({
           type: 'scatter',
-          data: [{ x: b, y: hr }],
+          data: [{ x: b, y: rr }],
           pointRadius: 8,
           pointStyle: 'rectRot',
           pointBackgroundColor: 'rgba(0,0,0,0.7)',
