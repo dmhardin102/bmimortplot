@@ -1,104 +1,269 @@
-<input id="bmi" type="number" min="10" max="50" step="0.1" placeholder="BMI">
-<div id="error-message" style="color: white; background-color: #d9534f; padding: 5px; margin: 5px 0; border-radius: 3px; display: none;">BMI must be between 10 and 50</div>
-<canvas id="mortChart"></canvas>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-function hrAllCause(bmi){
-  if (bmi < 22.5)      return Math.exp(0.049 * (22.5 - bmi));
-  if (bmi <= 25.0)     return 1.0;
-  return Math.exp(0.054 * (bmi - 25.0));
-}
-
-// build the baseline curve
-const xs = Array.from({length:401},(_,i)=>10+i*0.1);
-const ys = xs.map(hrAllCause);
-
-const ctx = document.getElementById('mortChart').getContext('2d');
-const chart = new Chart(ctx,{
-  type:'line',
-  data:{labels:xs, datasets:[{
-    label:'All-cause HR',
-    data:ys.map((y,i)=>({x:xs[i],y})),
-    borderColor:'rgba(220, 20, 60, 0.7)',
-    fill:false,
-    tension:0.3,
-    order: 0  // Lower values are drawn first (underneath)
-  }]},
-  options:{scales:{x:{type:'linear',title:{display:true,text:'BMI (kg/m²)'}},
-                   y:{title:{display:true,text:'Hazard ratio'},min:0.5,max:4}}}
-});
-
-// interactively add a marker
-document.addEventListener('DOMContentLoaded', () => {
-  const bmiInput = document.getElementById('bmi');
-  const errorMessage = document.getElementById('error-message');
-  
-  // Function to update chart with current BMI value
-  const updateChartWithBmi = (bmi) => {
-    // Clear any previous error message
-    errorMessage.style.display = 'none';
-    
-    // Validate BMI range
-    if(isNaN(bmi) || bmi < 10 || bmi > 50) {
-      // Show error message for out of bounds values
-      if(!isNaN(bmi) && (bmi < 10 || bmi > 50)) {
-        errorMessage.style.display = 'block';
-      }
-      
-      // Remove marker if input is invalid
-      chart.data.datasets = chart.data.datasets.filter(d => !d.isMarker);
-      chart.update();
-      return;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BMI vs Mortality/Morbidity Risk</title>
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+  <style>
+    :root {
+      --font: 'Inter', sans-serif;
+      --bg-page: #f7f9fa;
+      --bg-card: #ffffff;
+      --clr-primary: #2b6cb0;
+      --clr-error-bg: #fed7d7;
+      --clr-error-text: #9b2c2c;
+      --shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
-    
-    const hr = hrAllCause(bmi);
-    
-    // Save to localStorage
-    localStorage.setItem('savedBmiValue', bmi);
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background-color: var(--bg-page);
+      color: #1a202c;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    .bmi-card {
+      background: var(--bg-card);
+      padding: 24px;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+    .bmi-card h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .bmi-card input {
+      width: 200px;
+      padding: 10px 12px;
+      font-size: 1rem;
+      border: 1px solid #cbd5e0;
+      border-radius: 4px;
+      text-align: center;
+      transition: border-color .2s;
+    }
+    .bmi-card input:focus {
+      outline: none;
+      border-color: var(--clr-primary);
+    }
+    #error-message {
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--clr-error-bg);
+      color: var(--clr-error-text);
+      border-radius: 4px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .charts-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+      margin-top: 40px;
+    }
+    .chart-card {
+      background: var(--bg-card);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+    .chart-card h3 {
+      font-size: 1.2rem;
+      font-weight: 500;
+      margin-bottom: 12px;
+    }
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 250px;
+    }
+  </style>
+</head>
+<body>
 
-    // remove old marker dataset
-    chart.data.datasets = chart.data.datasets.filter(d => !d.isMarker);
-    
-    // Reset the main line dataset to have a gap at the marker position
-    const gap = 0.15; // Keep gap size at 0.25 as preferred
-    chart.data.datasets[0].data = xs.map((x,i) => {
-      // Skip points within gap range of the marker position
-      if (Math.abs(x - bmi) < gap) {
-        return {x: x, y: null}; // null creates a gap in the line
+  <div class="container">
+    <div class="bmi-card">
+      <h2>BMI and Mortality/Morbidity Risk</h2>
+      <input
+        id="bmi-input"
+        type="number"
+        min="10"
+        max="50"
+        step="0.1"
+        placeholder="Enter BMI (10–50)"
+      />
+      <div id="error-message">BMI must be between 10 and 50</div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>All-cause Mortality</h3>
+        <div class="chart-container">
+          <canvas id="mortChartAll"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Communicable Disease</h3>
+        <div class="chart-container">
+          <canvas id="mortChartComm"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Non-communicable Disease</h3>
+        <div class="chart-container">
+          <canvas id="mortChartNcd"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Hazard‐ratio functions
+    function hrAll(b){
+      return b < 22.5
+        ? Math.exp(0.049 * (22.5 - b))
+        : b <= 25
+        ? 1
+        : Math.exp(0.054 * (b - 25));
+    }
+    const CD_PIVOT = 26;
+    function hrCD(b){
+      return b < CD_PIVOT
+        ? Math.exp(0.0629 * (CD_PIVOT - b))
+        : Math.exp(0.0494 * (b - CD_PIVOT));
+    }
+    const NCD_PIVOT = 25;
+    function hrNCD(b){
+      return b < NCD_PIVOT
+        ? Math.exp(0.0373 * (NCD_PIVOT - b))
+        : Math.exp(0.0398 * (b - NCD_PIVOT));
+    }
+
+    // X values
+    const xs = Array.from({ length: 401 }, (_, i) => 10 + i * 0.1);
+
+    // Chart builder
+    function buildChart(id, hrFn, baseColor) {
+      const colorMap = {
+        crimson: 'rgba(220,20,60,0.5)',
+        royalblue: 'rgba(65,105,225,0.5)',
+        seagreen: 'rgba(46,139,87,0.5)'
+      };
+      return new Chart(document.getElementById(id), {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: id,
+              data: xs.map(x => ({ x, y: hrFn(x) })),
+              borderColor: colorMap[baseColor],
+              borderWidth: 1.0,
+              tension: 0.3,
+              fill: false,
+              order: 0
+            },
+            {
+              label: 'HR=1',
+              data: xs.map(x => ({ x, y: 1 })),
+              borderColor: 'rgba(102,102,102,0.3)',
+              borderDash: [6, 4],
+              borderWidth: 1,
+              pointRadius: 0,
+              fill: false,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: {
+              type: 'linear',
+              min: 10,
+              max: 50,
+              title: { display: true, text: 'BMI (kg/m²)' }
+            },
+            y: {
+              type: 'linear',
+              min: 0.5,
+              max: 4,
+              grace: '5%',
+              title: { display: true, text: 'Hazard ratio' }
+            }
+          }
+        }
+      });
+    }
+
+    // Instantiate charts
+    const charts = [
+      { chart: buildChart('mortChartAll', hrAll, 'crimson'), fn: hrAll },
+      { chart: buildChart('mortChartComm', hrCD, 'royalblue'), fn: hrCD },
+      { chart: buildChart('mortChartNcd', hrNCD, 'seagreen'), fn: hrNCD }
+    ];
+
+    // Handle BMI input
+    const bmiInput = document.getElementById('bmi-input');
+    const errorMsg = document.getElementById('error-message');
+
+    function updateCharts(b) {
+      if (isNaN(b) || b < 10 || b > 50) {
+        errorMsg.style.display = 'block';
+        // remove any existing markers
+        charts.forEach(({ chart }) => {
+          chart.data.datasets = chart.data.datasets.slice(0, 2);
+          chart.update();
+        });
+        return;
       }
-      return {x: x, y: ys[i]};
-    });
+      errorMsg.style.display = 'none';
+      localStorage.savedBmi = b;
 
-    // Add marker
-    chart.data.datasets.push({
-      type: 'scatter',
-      data:[{x:bmi,y:hr}], 
-      pointRadius:12,
-      pointBackgroundColor:'rgba(0, 0, 0, 1)',
-      pointBorderColor:'white',
-      pointBorderWidth: 2,
-      pointStyle: 'rect',
-      showLine:false, 
-      isMarker:true,
-      order: 99
-    });
-    
-    chart.update();
-  };
-  
-  // Load previously saved BMI value from localStorage if available
-  const savedBmi = localStorage.getItem('savedBmiValue');
-  if (savedBmi !== null) {
-    const bmiValue = parseFloat(savedBmi);
-    bmiInput.value = savedBmi;
-    // Directly call the function to update the chart with the saved value
-    updateChartWithBmi(bmiValue);
-  }
-  
-  // Add event listener for input changes
-  bmiInput.addEventListener('input', e => {
-    const bmi = parseFloat(e.target.value);
-    updateChartWithBmi(bmi);
-  });
-});
-</script>
+      charts.forEach(({ chart, fn }) => {
+        const hr = fn(b);
+        // reset to baseline datasets
+        chart.data.datasets = chart.data.datasets.slice(0, 2);
+        // introduce a small gap in the line
+        const gap = 0.2;
+        chart.data.datasets[0].data = xs.map(x =>
+          Math.abs(x - b) < gap ? { x, y: null } : { x, y: fn(x) }
+        );
+        // add the marker
+        chart.data.datasets.push({
+          type: 'scatter',
+          data: [{ x: b, y: hr }],
+          pointRadius: 8,
+          pointStyle: 'rectRot',
+          pointBackgroundColor: 'rgba(0,0,0,0.7)',
+          pointBorderColor: 'rgba(255,255,255,0.9)',
+          pointBorderWidth: 1.5,
+          showLine: false,
+          order: 99
+        });
+        chart.update('none');
+      });
+    }
+
+    bmiInput.addEventListener('input', () => updateCharts(+bmiInput.value));
+    // load saved value if present
+    if (localStorage.savedBmi) {
+      bmiInput.value = localStorage.savedBmi;
+      updateCharts(+localStorage.savedBmi);
+    }
+  </script>
+</body>
+</html>
